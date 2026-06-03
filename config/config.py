@@ -16,12 +16,12 @@ class Settings(BaseSettings):
     DATABASE_URL: str = f"sqlite+aiosqlite:///{PROJECT_ROOT / 'backend' / 'vates.db'}"
 
     # JWT
-    JWT_SECRET: str = "vates-dev-secret-change-in-production"
+    JWT_SECRET: str = ""
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 120
 
     # LLM
-    LLM_API_KEY: str = "sk-d7f0775984c3436ca8d242398ea6876f"
+    LLM_API_KEY: str = ""
     LLM_BASE_URL: str = "https://api.deepseek.com/v1"
     LLM_MODEL: str = "deepseek-chat"
     LLM_MAX_TOKENS: int = 8192
@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     STOCK_TRADING_HOURS_ONLY: bool = True  # 仅交易时段采集
 
     class Config:
-        env_file = ".env"
+        env_file = str(PROJECT_ROOT / ".env")
         env_file_encoding = "utf-8"
 
 
