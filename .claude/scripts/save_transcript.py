@@ -236,6 +236,14 @@ def main():
 
     convert_jsonl_to_export(src, dst)
 
+    # 自动 stage 到 git
+    import subprocess
+    subprocess.run(
+        ["git", "add", dst],
+        cwd=project_root,
+        capture_output=True,
+    )
+
 
 if __name__ == "__main__":
     main()
