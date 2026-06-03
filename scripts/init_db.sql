@@ -66,33 +66,6 @@ INSERT INTO market_config (param_name, param_value, description) VALUES
     ('MAX_BOARD_HIGH', 5, '最高连板大于等于此值高潮信号')
 ON CONFLICT (param_name) DO NOTHING;
 
-CREATE TABLE IF NOT EXISTS trade_patterns (
-    pattern_id SERIAL PRIMARY KEY,
-    pattern_name VARCHAR(50),
-    conditions_json JSONB,
-    risk_tips TEXT
-);
-
-CREATE TABLE IF NOT EXISTS pattern_signals (
-    id SERIAL PRIMARY KEY,
-    code VARCHAR(10),
-    trade_date DATE,
-    pattern_id INT,
-    matched_details JSONB
-);
-
-CREATE TABLE IF NOT EXISTS pattern_backtest_cache (
-    pattern_id INT,
-    lookback_days INT,
-    sample_count INT,
-    win_rate NUMERIC(5,2),
-    avg_gain NUMERIC(10,2),
-    avg_loss NUMERIC(10,2),
-    avg_pnl_ratio NUMERIC(5,2),
-    updated_at TIMESTAMP,
-    PRIMARY KEY (pattern_id, lookback_days)
-);
-
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     openid VARCHAR(100) UNIQUE,
@@ -111,3 +84,83 @@ CREATE TABLE IF NOT EXISTS user_watchlist (
     in_observe_pool BOOLEAN DEFAULT FALSE,
     PRIMARY KEY (user_id, code)
 );
+
+CREATE TABLE IF NOT EXISTS ai_prompts (
+    id VARCHAR(36) PRIMARY KEY,
+    scene VARCHAR(50) DEFAULT '',
+    role VARCHAR(50) DEFAULT '',
+    role_name VARCHAR(100) DEFAULT '',
+    module VARCHAR(50) DEFAULT '',
+    skill VARCHAR(50) DEFAULT '',
+    skill_name VARCHAR(200) DEFAULT '',
+    skill_summary VARCHAR(50) DEFAULT '',
+    skill_detail TEXT DEFAULT '',
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    created_by VARCHAR(50) DEFAULT '',
+    updated_at TIMESTAMP DEFAULT NOW(),
+    updated_by VARCHAR(50) DEFAULT '',
+    is_deleted BOOLEAN DEFAULT FALSE
+);
+CREATE INDEX IF NOT EXISTS idx_ai_prompts_scene ON ai_prompts(scene);
+
+CREATE TABLE IF NOT EXISTS ai_call_logs (
+    id VARCHAR(36) PRIMARY KEY,
+    template_id VARCHAR(36) DEFAULT '',
+    scene VARCHAR(50) DEFAULT '',
+    input_summary VARCHAR(200) DEFAULT '',
+    output_summary VARCHAR(200) DEFAULT '',
+    confidence_label VARCHAR(10) DEFAULT '',
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS holdings (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL DEFAULT 1,
+    code VARCHAR(10) NOT NULL,
+    name VARCHAR(50) DEFAULT '',
+    cost_price NUMERIC(10,3) NOT NULL DEFAULT 0,
+    shares INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    is_deleted BOOLEAN DEFAULT FALSE
+);
+CREATE INDEX IF NOT EXISTS idx_holdings_user ON holdings(user_id);
+
+CREATE TABLE IF NOT EXISTS prediction_records (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id INT NOT NULL DEFAULT 1,
+    type VARCHAR(10) NOT NULL,
+    code VARCHAR(10) DEFAULT '',
+    name VARCHAR(50) NOT NULL,
+    horizon VARCHAR(20) DEFAULT '',
+    prediction_content TEXT DEFAULT '',
+    confidence_label VARCHAR(10) DEFAULT '',
+    status VARCHAR(20) DEFAULT 'tracking',
+    is_deleted BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_prediction_user ON prediction_records(user_id);
+CREATE INDEX IF NOT EXISTS idx_prediction_type ON prediction_records(type);
+
+CREATE TABLE IF NOT EXISTS data_snapshots (
+    id VARCHAR(36) PRIMARY KEY,
+    prediction_id VARCHAR(36) NOT NULL,
+    structured_data TEXT DEFAULT '{}',
+    source_urls TEXT DEFAULT '[]',
+    fetch_timestamp TIMESTAMP DEFAULT NOW(),
+    confidence_label VARCHAR(10) DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_snapshot_pred ON data_snapshots(prediction_id);
+
+CREATE TABLE IF NOT EXISTS review_records (
+    id VARCHAR(36) PRIMARY KEY,
+    prediction_id VARCHAR(36) NOT NULL,
+    review_type VARCHAR(20) NOT NULL,
+    accuracy_rating VARCHAR(20) DEFAULT '',
+    deviation_reason VARCHAR(20) DEFAULT '',
+    review_content TEXT DEFAULT '',
+    created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_review_pred ON review_records(prediction_id);

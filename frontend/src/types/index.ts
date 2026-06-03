@@ -1,103 +1,81 @@
 // API 统一响应
 export interface ApiResponse<T> {
-  code: number
-  message: string
-  data: T
+  code: number;
+  message: string;
+  data: T;
 }
 
 // 分页
 export interface PaginatedData<T> {
-  items: T[]
-  total: number
-  page: number
-  page_size: number
+  items: T[];
+  total: number;
+  page: number;
+  page_size: number;
 }
 
-// 市场状态
-export type MarketStatus = 'ICE' | 'WARM' | 'HIGH' | 'RETREAT'
+// 预测时段
+export type StockHorizon = "tomorrow" | "week" | "1m" | "3m";
 
-export interface MarketTemperature {
-  trade_date: string
-  status: MarketStatus
-  status_text: string
-  advice: string
-  details: {
-    max_board_height: number
-    promotion_rate: number
-    bomb_rate: number
-    yesterday_avg_return: number
-  }
-  main_flows: SectorFlow[]
+// 置信度标签
+export type ConfidenceLabel = "高" | "中" | "低";
+
+// 预测记录状态
+export type PredictionStatus = "tracking" | "reviewed_match" | "reviewed_deviate" | "expired";
+
+// 预测记录
+export interface PredictionRecord {
+  id: string;
+  type: "stock" | "industry";
+  code: string;
+  name: string;
+  horizon: string;
+  prediction_content: string;
+  confidence_label: ConfidenceLabel;
+  status: PredictionStatus;
+  created_at: string | null;
 }
 
-export interface SectorFlow {
-  sector: string
-  net_inflow: number
-  lead_stock: string
+// 数据快照
+export interface DataSnapshot {
+  [key: string]: any;
+  _source_urls?: string[];
+  _fetch_timestamp?: string;
+  _confidence?: ConfidenceLabel;
 }
 
-// 股票
-export interface StockSearchResult {
-  code: string
-  name: string
-  industry: string
-  close: number
-  change_pct: number
+// 复盘记录
+export interface ReviewRecord {
+  id: string;
+  prediction_id: string;
+  review_type: string;
+  accuracy_rating: string;
+  deviation_reason: string;
+  review_content: string;
+  created_at: string | null;
 }
 
-export interface StockDetail {
-  code: string
-  name: string
-  industry: string
-  open: number
-  high: number
-  low: number
-  close: number
-  volume: number
-  amount: number
-  change_pct: number
-  turnover_rate: number
-  sector_strength: number
+// 预测详情
+export interface PredictionDetail extends PredictionRecord {
+  data_snapshot: DataSnapshot | null;
+  reviews: ReviewRecord[];
 }
 
-// 模式
-export interface PatternSignal {
-  pattern_id: number
-  name: string
-  description: string
-  details: Record<string, unknown>
-  confirm_condition: string
-  fail_condition: string
-  risk_reference: number | null
-  history_stats?: PatternHistoryStats
+// 持仓
+export interface Holding {
+  id: number;
+  code: string;
+  name: string;
+  cost_price: number;
+  shares: number;
+  current_price: number | null;
+  profit_amount: number | null;
+  profit_pct: number | null;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
-export interface PatternHistoryStats {
-  win_rate: number
-  avg_pnl_ratio: number
-  sample_count: number
-}
-
-// 用户
-export interface WatchlistItem {
-  code: string
-  name: string
-  close: number
-  change_pct: number
-  matched_pattern: string | null
-  in_observe_pool: boolean
-}
-
-// 复盘
-export interface ReviewReport {
-  trade_date: string
-  market_status: MarketStatus
-  status_text: string
-  max_board_height: number
-  promotion_rate: number
-  bomb_rate: number
-  yesterday_avg_return: number
-  main_flows: SectorFlow[]
-  signals: PatternSignal[]
-  risk_alerts: string[]
+// 提示词业务场景
+export interface PromptScene {
+  code: string;
+  label: string;
 }

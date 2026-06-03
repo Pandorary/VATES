@@ -1,0 +1,15 @@
+{
+  "deno": false,
+  "env": {
+    "browser": true,
+    "es2022": true
+  },
+  "ignore": ["dist", "build", "node_modules", "*.config.*"],
+  "rules": {
+    "style/noNonNullAssertion": "off",
+    "style/useConst": "off"
+  },
+  "typescript": {
+    "strict": true
+  }
+}

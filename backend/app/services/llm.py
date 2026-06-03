@@ -1,7 +1,7 @@
 """LLM 调用服务 — OpenAI 兼容接口 (DeepSeek / 通义千问 / GPT 等)"""
 import logging
 import httpx
-from app.config import settings
+from config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +26,9 @@ async def chat(messages: list[dict], model: str | None = None, **kwargs) -> dict
         data = resp.json()
 
     choice = data["choices"][0]
+    content = choice["message"]["content"]
     return {
-        "content": choice["message"]["content"],
+        "content": content,
         "model": data.get("model", body["model"]),
         "usage": data.get("usage", {}),
     }

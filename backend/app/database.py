@@ -2,12 +2,17 @@
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 
-from app.config import settings
+from config import settings
 
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=False,
+    connect_args={
+        "check_same_thread": False,
+        "timeout": 30.0,  # SQLite busy timeout in seconds
+    },
 )
+
 
 async_session_factory = async_sessionmaker(
     engine,
@@ -21,12 +26,18 @@ class Base(DeclarativeBase):
 
 
 async def init_db():
-    """初始化数据库表 — 必须先 import 所有 models 再 create_all"""
+    """初始化数据库表 + 种子数据"""
     import app.models.stock  # noqa: F401
     import app.models.market  # noqa: F401
-    import app.models.pattern  # noqa: F401
     import app.models.user  # noqa: F401
     import app.models.ai  # noqa: F401
+    import app.models.chat_cache  # noqa: F401
+    import app.models.holding  # noqa: F401
+    import app.models.industry_cache  # noqa: F401
+    import app.models.tracking  # noqa: F401
+    import app.models.price_cache  # noqa: F401
+    import app.models.user_config  # noqa: F401
+    import app.models.prediction  # noqa: F401
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
