@@ -1,0 +1,12 @@
+{
+  "tasks": [
+    {
+      "id": "1e132102",
+      "cron": "7,37 * * * *",
+      "prompt": "自动保存会话记录：运行 py D:\\AI\\vates\\.claude\\scripts\\save_transcript.py --auto",
+      "createdAt": 1780519617996,
+      "lastFiredAt": 1780686526319,
+      "recurring": true
+    }
+  ]
+}

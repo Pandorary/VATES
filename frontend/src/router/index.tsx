@@ -1,8 +1,11 @@
 import { lazy, Suspense } from "react";
 import { createBrowserRouter } from "react-router-dom";
 import AppLayout from "../components/AppLayout";
-import Home from "../pages/Home";
+import SearchHome from "../pages/SearchHome";
 
+const SearchClassified = lazy(() => import("../pages/SearchClassified"));
+const SearchPredicting = lazy(() => import("../pages/SearchPredicting"));
+const SearchResult = lazy(() => import("../pages/SearchResult"));
 const PromptManager = lazy(() => import("../pages/PromptManager"));
 const Watchlist = lazy(() => import("../pages/Watchlist"));
 const AIPrediction = lazy(() => import("../pages/AIPrediction"));
@@ -20,7 +23,10 @@ const router = createBrowserRouter([
   {
     element: <AppLayout />,
     children: [
-      { path: "/", element: <Home /> },
+      { index: true, element: <SearchHome /> },
+      { path: "classify", element: <LazyPage Component={SearchClassified} /> },
+      { path: "predicting", element: <LazyPage Component={SearchPredicting} /> },
+      { path: "result", element: <LazyPage Component={SearchResult} /> },
       { path: "/prompts", element: <LazyPage Component={PromptManager} /> },
       { path: "/watchlist", element: <LazyPage Component={Watchlist} /> },
       { path: "/prediction/:stock", element: <LazyPage Component={AIPrediction} /> },

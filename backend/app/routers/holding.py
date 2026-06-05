@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from config import settings
+from app.services.llm import chat as llm_chat
 from app.schemas.common import ApiResponse
 from app.schemas.holding import (
     HoldingOut,
@@ -80,7 +81,7 @@ async def list_holdings(db: AsyncSession = Depends(get_db)):
     codes = list(set(r[1] for r in raw_rows if r[1]))
 
     # 批量获取行情数据（真实 API，非 LLM）
-    from app.services.quotes import get_quotes
+    from app.services.data_engine import get_quotes
     prices: dict = {}
     if codes:
         try:
@@ -155,8 +156,6 @@ async def update_total_assets(body: TotalAssetsUpdate, db: AsyncSession = Depend
     return ApiResponse(data={"value": body.value})
 
 
-PRICE_PROMPT = """deprecated — no longer used"""
-
 
 @router.post("/holdings", response_model=ApiResponse[HoldingOut])
 async def create_holding(body: HoldingCreateIn, db: AsyncSession = Depends(get_db)):
@@ -165,7 +164,7 @@ async def create_holding(body: HoldingCreateIn, db: AsyncSession = Depends(get_d
         return ApiResponse(code=400, message="股票代码不能为空", data=None)
 
     # 获取股票名称和当前价格（真实 API）
-    from app.services.quotes import get_quote
+    from app.services.data_engine import get_quote
     name_val = ""
     current_price = None
     try:
@@ -231,7 +230,7 @@ async def update_holding(holding_id: int, body: HoldingUpdateIn, db: AsyncSessio
     name = existing[2] or ""
     current_price = None
     try:
-        from app.services.quotes import get_quote
+        from app.services.data_engine import get_quote
         quote = await get_quote(code, db)
         if quote:
             name = quote.name or name
@@ -295,7 +294,7 @@ async def refresh_holding_price(holding_id: int, db: AsyncSession = Depends(get_
     code = existing[1]
 
     # 通过行情管理器获取最新价格
-    from app.services.quotes import get_quote
+    from app.services.data_engine import get_quote
     try:
         quote = await get_quote(code, db)
         if not quote:
@@ -346,7 +345,7 @@ async def diagnose_holding(holding_id: int, db: AsyncSession = Depends(get_db)):
     # 获取当前行情
     current_price = None
     try:
-        from app.services.quotes import get_quote
+        from app.services.data_engine import get_quote
         quote = await get_quote(code, db)
         if quote:
             name = quote.name or name
@@ -439,7 +438,7 @@ async def review_holding(holding_id: int, db: AsyncSession = Depends(get_db)):
     # 获取当前行情
     current_price = None
     try:
-        from app.services.quotes import get_quote
+        from app.services.data_engine import get_quote
         quote = await get_quote(code, db)
         if quote:
             current_price = quote.price

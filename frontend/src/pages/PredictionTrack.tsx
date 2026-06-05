@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { getPredictionRecords, getPredictionDetail, deletePrediction, triggerReview } from "@/services/api";
 import { Button } from "@/components/ui/button";
 import {
@@ -74,14 +74,38 @@ interface ReviewRecord {
   created_at: string | null;
 }
 
+interface GroupedRecord {
+  key: string;
+  name: string;
+  code: string;
+  items: PredictionRecord[];
+  horizons: string[];
+}
+
 const PredictionTrack = () => {
   const [tab, setTab] = useState<"stock" | "industry">("stock");
   const [items, setItems] = useState<PredictionRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
+  const [expandedItem, setExpandedItem] = useState<string | null>(null);
   const [detail, setDetail] = useState<PredictionDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [reviewing, setReviewing] = useState<string | null>(null);
+
+  // 按股票代码分组（同只股票不同时段合并为一条）
+  const grouped = useMemo(() => {
+    const map = new Map<string, GroupedRecord>();
+    for (const item of items) {
+      const key = item.code || item.name;
+      if (!map.has(key)) {
+        map.set(key, { key, name: item.name, code: item.code || "", items: [], horizons: [] });
+      }
+      const g = map.get(key)!;
+      g.items.push(item);
+      g.horizons.push(item.horizon);
+    }
+    return Array.from(map.values());
+  }, [items]);
 
   useEffect(() => {
     fetchRecords();
@@ -99,16 +123,28 @@ const PredictionTrack = () => {
     }
   }
 
-  async function toggleExpand(id: string) {
-    if (expanded === id) {
-      setExpanded(null);
+  async function toggleGroupExpand(key: string) {
+    if (expandedGroup === key) {
+      setExpandedGroup(null);
+      setExpandedItem(null);
       setDetail(null);
       return;
     }
-    setExpanded(id);
+    setExpandedGroup(key);
+    setExpandedItem(null);
+    setDetail(null);
+  }
+
+  async function toggleItemDetail(itemId: string) {
+    if (expandedItem === itemId) {
+      setExpandedItem(null);
+      setDetail(null);
+      return;
+    }
+    setExpandedItem(itemId);
     setDetailLoading(true);
     try {
-      const res = await getPredictionDetail(id);
+      const res = await getPredictionDetail(itemId);
       setDetail(res.data.data);
     } catch {
       setDetail(null);
@@ -126,8 +162,7 @@ const PredictionTrack = () => {
         return;
       }
       toast.success("复盘已生成");
-      // Refresh detail
-      if (expanded === id) {
+      if (expandedItem === id) {
         const detailRes = await getPredictionDetail(id);
         setDetail(detailRes.data.data);
       }
@@ -142,8 +177,8 @@ const PredictionTrack = () => {
     try {
       await deletePrediction(id);
       setItems((prev) => prev.filter((i) => i.id !== id));
-      if (expanded === id) {
-        setExpanded(null);
+      if (expandedItem === id) {
+        setExpandedItem(null);
         setDetail(null);
       }
       toast.success("已删除");
@@ -207,122 +242,153 @@ const PredictionTrack = () => {
 
         {!loading && items.length > 0 && (
           <div className="flex flex-col gap-4">
-            {items.map((item) => {
-              const statusInfo = STATUS_MAP[item.status] || STATUS_MAP.tracking;
-              const confInfo = CONFIDENCE_MAP[item.confidence_label] || CONFIDENCE_MAP["中"];
-              const isExpanded = expanded === item.id;
+            {grouped.map((group) => {
+              const isGroupExpanded = expandedGroup === group.key;
+              // 取第一条记录的状态和日期作摘要
+              const firstItem = group.items[0];
 
               return (
-                <div key={item.id} className="bg-card rounded-lg border overflow-hidden">
+                <div key={group.key} className="bg-card rounded-lg border overflow-hidden">
+                  {/* 组头部 — 股票名称 + 时段标签 */}
                   <div className="flex items-center justify-between px-6 py-4">
                     <div className="flex items-center gap-3">
-                      <h3 className="text-lg font-medium text-foreground">{item.name}</h3>
-                      <span className={`text-[11px] px-2 py-0.5 rounded-md font-medium ${statusInfo.bg} ${statusInfo.text}`}>
-                        {statusInfo.label}
-                      </span>
-                      <span className={`text-[11px] px-2 py-0.5 rounded-md font-medium ${confInfo.bg} ${confInfo.text}`}>
-                        置信度:{item.confidence_label || "中"}
-                      </span>
-                      {item.horizon && (
-                        <span className="text-xs text-muted-foreground">
-                          {HORIZON_MAP[item.horizon] || item.horizon}
-                        </span>
+                      <h3 className="text-lg font-medium text-foreground">{group.name}</h3>
+                      {group.code && group.name !== group.code && (
+                        <span className="text-xs text-muted-foreground">{group.code}</span>
                       )}
+                      {/* 时段标签 */}
+                      {group.horizons.map((h) => (
+                        <span key={h} className="text-[11px] px-2 py-0.5 rounded-md font-medium bg-gray-50 text-gray-500">
+                          {HORIZON_MAP[h] || h}
+                        </span>
+                      ))}
                       <span className="text-xs text-muted-foreground/50">
-                        {item.created_at?.slice(0, 10)}
+                        {firstItem.created_at?.slice(0, 10)}
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="text-xs rounded-lg"
-                        disabled={reviewing === item.id}
-                        onClick={() => handleReview(item.id)}
-                      >
-                        <RefreshCw className={`h-3 w-3 mr-1 ${reviewing === item.id ? "animate-spin" : ""}`} />
-                        触发复盘
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => toggleExpand(item.id)}>
-                        {isExpanded ? <ChevronUp className="h-4 w-4 mr-1" /> : <ChevronDown className="h-4 w-4 mr-1" />}
-                        {isExpanded ? "收起" : "详情"}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-red-500 hover:text-red-600 hover:bg-red-50"
-                        onClick={() => handleDelete(item.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
+                      <Button variant="ghost" size="sm" onClick={() => toggleGroupExpand(group.key)}>
+                        {isGroupExpanded ? <ChevronUp className="h-4 w-4 mr-1" /> : <ChevronDown className="h-4 w-4 mr-1" />}
+                        {isGroupExpanded ? "收起" : `展开 (${group.items.length})`}
                       </Button>
                     </div>
                   </div>
 
-                  {isExpanded && (
-                    <div className="border-t px-6 py-4">
-                      {detailLoading && (
-                        <div className="flex items-center justify-center py-8">
-                          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground mr-2" />
-                          <span className="text-sm text-muted-foreground">加载详情...</span>
-                        </div>
-                      )}
+                  {/* 展开 — 各时段预测子列表 */}
+                  {isGroupExpanded && (
+                    <div className="border-t">
+                      {group.items.map((item) => {
+                        const statusInfo = STATUS_MAP[item.status] || STATUS_MAP.tracking;
+                        const confInfo = CONFIDENCE_MAP[item.confidence_label] || CONFIDENCE_MAP["中"];
+                        const isDetailOpen = expandedItem === item.id;
 
-                      {!detailLoading && detail && (
-                        <div className="space-y-4">
-                          {/* 预测报告 */}
-                          <div>
-                            <h4 className="text-sm font-medium text-foreground mb-2 flex items-center gap-1.5">
-                              <FileText className="h-3.5 w-3.5" />
-                              原始预测报告
-                            </h4>
-                            <div
-                              className="prose prose-sm max-w-none prose-p:text-foreground/75 prose-headings:text-foreground/90 prose-strong:text-foreground/85 prose-li:text-foreground/75 [&_h3]:text-sm [&_h3]:font-medium [&_p]:my-1.5 [&_p]:leading-relaxed [&_li]:my-0.5"
-                              dangerouslySetInnerHTML={{ __html: marked.parse(detail.prediction_content) as string }}
-                            />
-                          </div>
-
-                          {/* 数据快照 */}
-                          {detail.data_snapshot && (
-                            <div>
-                              <h4 className="text-sm font-medium text-foreground mb-2 flex items-center gap-1.5">
-                                <Database className="h-3.5 w-3.5" />
-                                数据快照
-                              </h4>
-                              <pre className="text-xs text-muted-foreground bg-muted/30 p-3 rounded-lg overflow-x-auto max-h-48">
-                                {JSON.stringify(detail.data_snapshot, null, 2)}
-                              </pre>
-                            </div>
-                          )}
-
-                          {/* 复盘记录 */}
-                          {detail.reviews && detail.reviews.length > 0 && (
-                            <div>
-                              <h4 className="text-sm font-medium text-foreground mb-2 flex items-center gap-1.5">
-                                <ShieldCheck className="h-3.5 w-3.5" />
-                                复盘记录 ({detail.reviews.length})
-                              </h4>
-                              <div className="space-y-3">
-                                {detail.reviews.map((review) => (
-                                  <div key={review.id} className="border rounded-lg p-4">
-                                    <div className="flex items-center gap-2 mb-2">
-                                      <span className="text-xs text-muted-foreground">{review.review_type}</span>
-                                      <span className="text-xs text-muted-foreground/50">{review.created_at?.slice(0, 10)}</span>
-                                    </div>
-                                    <div
-                                      className="prose prose-sm max-w-none prose-p:text-foreground/75 prose-headings:text-foreground/90 [&_p]:my-1 [&_p]:leading-relaxed"
-                                      dangerouslySetInnerHTML={{ __html: marked.parse(review.review_content) as string }}
-                                    />
-                                  </div>
-                                ))}
+                        return (
+                          <div key={item.id} className="border-b last:border-b-0">
+                            <div className="flex items-center justify-between px-6 py-3 bg-muted/20">
+                              <div className="flex items-center gap-3">
+                                <span className="text-sm font-medium text-foreground/80">
+                                  {HORIZON_MAP[item.horizon] || item.horizon}
+                                </span>
+                                <span className={`text-[11px] px-2 py-0.5 rounded-md font-medium ${statusInfo.bg} ${statusInfo.text}`}>
+                                  {statusInfo.label}
+                                </span>
+                                <span className={`text-[11px] px-2 py-0.5 rounded-md font-medium ${confInfo.bg} ${confInfo.text}`}>
+                                  置信度:{item.confidence_label || "中"}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="text-xs rounded-lg"
+                                  disabled={reviewing === item.id}
+                                  onClick={() => handleReview(item.id)}
+                                >
+                                  <RefreshCw className={`h-3 w-3 mr-1 ${reviewing === item.id ? "animate-spin" : ""}`} />
+                                  触发复盘
+                                </Button>
+                                <Button variant="ghost" size="sm" onClick={() => toggleItemDetail(item.id)}>
+                                  {isDetailOpen ? "收起" : "详情"}
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-red-500 hover:text-red-600 hover:bg-red-50"
+                                  onClick={() => handleDelete(item.id)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
                               </div>
                             </div>
-                          )}
 
-                          {(!detail.reviews || detail.reviews.length === 0) && (
-                            <p className="text-xs text-muted-foreground py-2">暂无复盘记录，点击「触发复盘」手动生成</p>
-                          )}
-                        </div>
-                      )}
+                            {/* 子项详情 */}
+                            {isDetailOpen && (
+                              <div className="px-6 py-4">
+                                {detailLoading && (
+                                  <div className="flex items-center justify-center py-8">
+                                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground mr-2" />
+                                    <span className="text-sm text-muted-foreground">加载详情...</span>
+                                  </div>
+                                )}
+
+                                {!detailLoading && detail && (
+                                  <div className="space-y-4">
+                                    <div>
+                                      <h4 className="text-sm font-medium text-foreground mb-2 flex items-center gap-1.5">
+                                        <FileText className="h-3.5 w-3.5" />
+                                        原始预测报告
+                                      </h4>
+                                      <div
+                                        className="prose prose-sm max-w-none prose-p:text-foreground/75 prose-headings:text-foreground/90 prose-strong:text-foreground/85 prose-li:text-foreground/75 [&_h3]:text-sm [&_h3]:font-medium [&_p]:my-1.5 [&_p]:leading-relaxed [&_li]:my-0.5"
+                                        dangerouslySetInnerHTML={{ __html: marked.parse(detail.prediction_content) as string }}
+                                      />
+                                    </div>
+
+                                    {detail.data_snapshot && (
+                                      <div>
+                                        <h4 className="text-sm font-medium text-foreground mb-2 flex items-center gap-1.5">
+                                          <Database className="h-3.5 w-3.5" />
+                                          数据快照
+                                        </h4>
+                                        <pre className="text-xs text-muted-foreground bg-muted/30 p-3 rounded-lg overflow-x-auto max-h-48">
+                                          {JSON.stringify(detail.data_snapshot, null, 2)}
+                                        </pre>
+                                      </div>
+                                    )}
+
+                                    {detail.reviews && detail.reviews.length > 0 && (
+                                      <div>
+                                        <h4 className="text-sm font-medium text-foreground mb-2 flex items-center gap-1.5">
+                                          <ShieldCheck className="h-3.5 w-3.5" />
+                                          复盘记录 ({detail.reviews.length})
+                                        </h4>
+                                        <div className="space-y-3">
+                                          {detail.reviews.map((review) => (
+                                            <div key={review.id} className="border rounded-lg p-4">
+                                              <div className="flex items-center gap-2 mb-2">
+                                                <span className="text-xs text-muted-foreground">{review.review_type}</span>
+                                                <span className="text-xs text-muted-foreground/50">{review.created_at?.slice(0, 10)}</span>
+                                              </div>
+                                              <div
+                                                className="prose prose-sm max-w-none prose-p:text-foreground/75 prose-headings:text-foreground/90 [&_p]:my-1 [&_p]:leading-relaxed"
+                                                dangerouslySetInnerHTML={{ __html: marked.parse(review.review_content) as string }}
+                                              />
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {(!detail.reviews || detail.reviews.length === 0) && (
+                                      <p className="text-xs text-muted-foreground py-2">暂无复盘记录，点击「触发复盘」手动生成</p>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

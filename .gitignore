@@ -1,4 +1,4 @@
-node_modules/
+frontend/node_modules/
 dist/
 __pycache__/
 *.pyc
@@ -9,5 +9,6 @@ venv/
 .DS_Store
 Thumbs.db
 .claude/settings.local.json
-*.db
+db/*.db
 original_homepage.*
+nul

@@ -3,6 +3,7 @@
 时间去重：如果最近 MIN_EXPORT_INTERVAL_MINUTES 分钟内已导出过，跳过。
 设为 0 则每次都导出。
 """
+import argparse
 import glob
 import json
 import os
@@ -201,6 +202,10 @@ def _get_latest_export_ts(logs_dir: str) -> datetime | None:
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--auto", action="store_true", help="Auto-discover session_id from latest jsonl")
+    args = parser.parse_args()
+
     project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     logs_dir = os.path.join(project_root, ".claude", "logs")
 
@@ -212,13 +217,23 @@ def main():
             if elapsed < timedelta(minutes=MIN_EXPORT_INTERVAL_MINUTES):
                 sys.exit(0)  # 静默跳过
 
-    raw = sys.stdin.read()
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        # stdin 不是合法 JSON，静默跳过
-        sys.exit(0)
-    session_id = data.get("session_id", "")
+    if args.auto:
+        # 自动发现最新 session 的 jsonl 文件
+        home = os.path.expanduser("~")
+        proj_dir = os.path.join(home, ".claude", "projects", "D--AI-vates")
+        jsonl_files = glob.glob(os.path.join(proj_dir, "*.jsonl"))
+        if not jsonl_files:
+            sys.exit(0)
+        latest_jsonl = max(jsonl_files, key=os.path.getmtime)
+        session_id = os.path.splitext(os.path.basename(latest_jsonl))[0]
+    else:
+        raw = sys.stdin.read()
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            # stdin 不是合法 JSON，静默跳过
+            sys.exit(0)
+        session_id = data.get("session_id", "")
 
     if not session_id:
         sys.exit(0)

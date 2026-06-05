@@ -1,5 +1,5 @@
 """股票基础模型"""
-from sqlalchemy import Column, String, Date, Numeric, BigInteger, Integer, PrimaryKeyConstraint, TIMESTAMP, func
+from sqlalchemy import Column, String, Date, Numeric, BigInteger, PrimaryKeyConstraint, TIMESTAMP, func
 from app.database import Base
 
 
@@ -23,25 +23,6 @@ class DailyQuote(Base):
     amount = Column(Numeric(16, 2), comment="成交额")
     change_pct = Column(Numeric(6, 2), comment="涨跌幅%")
     turnover_rate = Column(Numeric(6, 2), comment="换手率%")
-    __table_args__ = (PrimaryKeyConstraint("code", "trade_date"),)
-
-
-class MoneyFlow(Base):
-    __tablename__ = "money_flow"
-    code = Column(String(10))
-    trade_date = Column(Date)
-    main_net_inflow = Column(Numeric(14, 2), comment="主力净流入(万)")
-    super_large_net = Column(Numeric(14, 2), comment="超大单净流入")
-    __table_args__ = (PrimaryKeyConstraint("code", "trade_date"),)
-
-
-class LimitUpRecord(Base):
-    __tablename__ = "limit_up_records"
-    code = Column(String(10))
-    trade_date = Column(Date)
-    is_continuous = Column(Integer, comment="连续涨停天数")
-    board_height = Column(Integer, comment="当前连板高度")
-    broken_rate = Column(Numeric(6, 2), comment="炸板率")
     __table_args__ = (PrimaryKeyConstraint("code", "trade_date"),)
 
 

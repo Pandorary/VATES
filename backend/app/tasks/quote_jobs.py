@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 async def collect_quotes_job():
     """每分钟采集所有跟踪股票的行情"""
     try:
-        from app.services.quotes.manager import get_quote_manager
+        from app.services.data_engine.manager import get_quote_manager
         manager = get_quote_manager()
         async with async_session_factory() as db:
             count = await manager.refresh_all_tracked(db)

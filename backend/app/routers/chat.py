@@ -17,7 +17,7 @@ from app.schemas.ai import (
     PromptTemplateUpdateIn,
     PromptTemplateListOut,
 )
-from app.models.chat_cache import AIChatCache, DeepAnalysisCache, PredictionCache
+from app.models.chat_cache import AIChatCache
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -91,137 +91,6 @@ async def chat(body: ChatRequest, db: AsyncSession = Depends(get_db)):
     content = result.get("content", "")
     cache_entry = AIChatCache(
         query=query, response=content, search_date=today,
-    )
-    db.add(cache_entry)
-    await db.flush()
-
-    return ApiResponse(data={"content": content, "cached": False})
-
-
-class DeepAnalysisRequest(BaseModel):
-    stock: str = Field(..., description="股票代码或名称")
-    section: str = Field(..., description="板块名称（公司基本面/财报业绩/行业趋势/估值弹性/风险/投资结论）")
-
-
-@router.post("/deep-analysis", response_model=ApiResponse)
-async def deep_analysis(body: DeepAnalysisRequest, db: AsyncSession = Depends(get_db)):
-    """对某个板块进行深度分析（同一天同一只股票同一板块缓存）"""
-    if not settings.LLM_API_KEY:
-        return ApiResponse(code=500, message="未配置 LLM API Key", data={"content": "请在 .env 中设置 LLM_API_KEY"})
-
-    today = date.today()
-
-    # 1. 查缓存
-    stmt = select(DeepAnalysisCache).where(
-        DeepAnalysisCache.query == body.stock,
-        DeepAnalysisCache.section == body.section,
-        DeepAnalysisCache.search_date == today,
-    ).limit(1)
-    cached = (await db.execute(stmt)).scalar_one_or_none()
-    if cached:
-        return ApiResponse(data={"content": cached.response, "cached": True})
-
-    # 2. 取模板
-    template = await _get_active_template(db)
-    if not template:
-        return ApiResponse(code=400, message="未找到可用的提示词模板", data=None)
-
-    deep_prompt = f"""你是一位资深A股证券行业研究员。请对股票「{body.stock}」的「{body.section}」板块进行深度分析挖掘。
-
-要求：
-- 针对该板块进行更深入、更详细的剖析
-- 提供具体数据、案例和逻辑推演
-- 用 Markdown 格式输出
-- 内容至少 500 字
-- 用中文输出
-
-{template.replace("{{query}}", body.stock)}"""
-
-    from app.services.llm import chat as llm_chat
-
-    try:
-        result = await llm_chat([
-            {"role": "system", "content": deep_prompt},
-            {"role": "user", "content": f"请对{body.stock}的{body.section}进行深度分析"},
-        ])
-    except Exception as e:
-        logger.error(f"Deep analysis 失败: {e}")
-        return ApiResponse(code=500, message=f"AI 请求失败：{e}", data=None)
-
-    content = result.get("content", "")
-
-    # 3. 写入缓存
-    cache_entry = DeepAnalysisCache(
-        query=body.stock, section=body.section, response=content, search_date=today,
-    )
-    db.add(cache_entry)
-    await db.flush()
-
-    return ApiResponse(data={"content": content, "cached": False})
-
-
-class PredictionRequest(BaseModel):
-    stock: str = Field(..., description="股票代码或名称")
-    horizon: str = Field(..., description="预测时段：tomorrow / week / 1-3m / 3m+")
-
-
-HORIZON_LABELS = {
-    "tomorrow": "明天",
-    "week": "未来一周",
-    "1-3m": "未来 1-3 个月",
-    "3m+": "未来 3 个月以上",
-}
-
-
-@router.post("/prediction", response_model=ApiResponse)
-async def prediction(body: PredictionRequest, db: AsyncSession = Depends(get_db)):
-    """AI 预测股票走势（同一天同一股票同一时段缓存）"""
-    if not settings.LLM_API_KEY:
-        return ApiResponse(code=500, message="未配置 LLM API Key", data=None)
-
-    if body.horizon not in HORIZON_LABELS:
-        return ApiResponse(code=400, message="无效的预测时段", data=None)
-
-    today = date.today()
-
-    # 1. 查缓存
-    stmt = select(PredictionCache).where(
-        PredictionCache.query == body.stock,
-        PredictionCache.horizon == body.horizon,
-        PredictionCache.search_date == today,
-    ).limit(1)
-    cached = (await db.execute(stmt)).scalar_one_or_none()
-    if cached:
-        return ApiResponse(data={"content": cached.response, "cached": True})
-
-    horizon_label = HORIZON_LABELS[body.horizon]
-
-    prompt = f"""你是一位资深A股短线交易分析师。请基于以下信息，预测股票「{body.stock}」在「{horizon_label}」的走势。
-
-要求：
-- 给出明确的方向判断（上涨/震荡/下跌）和大致幅度
-- 列出关键驱动因素（基本面、技术面、消息面、资金面）
-- 给出关键支撑位和压力位
-- 提示潜在风险点
-- 用 Markdown 格式输出
-- 用中文输出
-- 注明这是 AI 推演，不构成投资建议"""
-
-    from app.services.llm import chat as llm_chat
-
-    try:
-        result = await llm_chat([
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": f"请预测 {body.stock} 在 {horizon_label} 的走势"},
-        ])
-    except Exception as e:
-        logger.error(f"Prediction 失败: {e}")
-        return ApiResponse(code=500, message=f"AI 请求失败：{e}", data=None)
-
-    content = result.get("content", "")
-
-    cache_entry = PredictionCache(
-        query=body.stock, horizon=body.horizon, response=content, search_date=today,
     )
     db.add(cache_entry)
     await db.flush()

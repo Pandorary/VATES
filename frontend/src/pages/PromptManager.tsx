@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { marked } from "marked";
 import {
   getPromptTemplates,
-  getPromptScenes,
   createPromptTemplate,
   updatePromptTemplate,
   deletePromptTemplate,

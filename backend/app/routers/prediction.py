@@ -6,12 +6,13 @@ from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from config import settings
 from app.schemas.common import ApiResponse
+from app.models.chat_cache import PredictionCache
 from app.services.data_engine import fetch_stock_data, fetch_industry_data, get_active_template
 
 logger = logging.getLogger(__name__)
@@ -51,14 +52,28 @@ class StockPredictionRequest(BaseModel):
 
 @router.post("/prediction/stock", response_model=ApiResponse)
 async def predict_stock(body: StockPredictionRequest, db: AsyncSession = Depends(get_db)):
-    """个股预测 — 数据引擎 + 预测提示词，输出五模块报告"""
+    """个股预测 — 数据引擎 + 预测提示词，输出五模块报告（同日同股票同时段缓存）"""
     if not settings.LLM_API_KEY:
         return ApiResponse(code=500, message="未配置 LLM API Key", data=None)
 
     if body.horizon not in STOCK_HORIZONS:
         return ApiResponse(code=400, message=f"无效的预测时段，可选：{', '.join(STOCK_HORIZONS.keys())}", data=None)
 
-    # 1. 数据引擎获取数据
+    today = date.today()
+
+    # 1. 查同日同股票同时段缓存
+    stmt = select(PredictionCache).where(
+        PredictionCache.query == body.code,
+        PredictionCache.horizon == body.horizon,
+        PredictionCache.search_date == today,
+    ).limit(1)
+    cached = (await db.execute(stmt)).scalar_one_or_none()
+    if cached:
+        cached_data = json.loads(cached.response)
+        cached_data["cached"] = True
+        return ApiResponse(data=cached_data)
+
+    # 2. 数据引擎获取数据
     data_result = await fetch_stock_data(body.code, body.code, db)
     confidence = data_result["confidence_label"]
 
@@ -69,13 +84,13 @@ async def predict_stock(body: StockPredictionRequest, db: AsyncSession = Depends
             "data_summary": data_result["structured_data"],
         })
 
-    # 2. 获取预测提示词
+    # 3. 获取预测提示词
     scene = f"stock_prediction_{body.horizon}"
     template = await get_active_template(db, scene)
     if not template:
         return ApiResponse(code=400, message="当前AI模板未配置，请联系管理员", data=None)
 
-    # 3. 注入数据到模板
+    # 4. 注入数据到模板
     horizon_label = STOCK_HORIZON_LABELS[body.horizon]
     data_json = json.dumps(data_result["structured_data"], ensure_ascii=False, indent=2)
 
@@ -84,7 +99,7 @@ async def predict_stock(body: StockPredictionRequest, db: AsyncSession = Depends
     system_prompt = system_prompt.replace("{{data}}", data_json)
     system_prompt = system_prompt.replace("{{confidence}}", confidence)
 
-    # 4. 调 LLM
+    # 5. 调 LLM
     from app.services.llm import chat as llm_chat
 
     try:
@@ -98,17 +113,29 @@ async def predict_stock(body: StockPredictionRequest, db: AsyncSession = Depends
 
     content = result.get("content", "")
 
-    # 5. 记录调用日志
+    # 6. 记录调用日志
     await _log_call(db, scene, f"股票:{body.code} 时段:{body.horizon}", content[:200], confidence)
 
-    return ApiResponse(data={
+    response_data = {
         "content": content,
         "confidence": confidence,
         "data_snapshot": data_result["structured_data"],
         "source_urls": data_result["source_urls"],
         "fetch_timestamp": data_result["fetch_timestamp"],
-        "cached": False,
-    })
+    }
+
+    # 7. 写入缓存
+    cache_entry = PredictionCache(
+        query=body.code,
+        horizon=body.horizon,
+        response=json.dumps(response_data, ensure_ascii=False),
+        search_date=today,
+    )
+    db.add(cache_entry)
+    await db.flush()
+
+    response_data["cached"] = False
+    return ApiResponse(data=response_data)
 
 
 # ---------- 行业预测 ----------

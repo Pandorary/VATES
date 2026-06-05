@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     DEBUG: bool = True
 
     # 数据库 - 开发模式默认 SQLite，路径相对于项目根目录
-    DATABASE_URL: str = f"sqlite+aiosqlite:///{PROJECT_ROOT / 'backend' / 'vates.db'}"
+    DATABASE_URL: str = f"sqlite+aiosqlite:///{PROJECT_ROOT / 'db' / 'vates.db'}"
 
     # JWT
     JWT_SECRET: str = ""

@@ -10,19 +10,9 @@ export function searchClassify(query: string) {
   return api.post("/search", { query });
 }
 
-// 行业分析（保留但不再在 UI 直接调用）
-export function industryAnalysis(query: string) {
-  return api.post("/industry-analysis", { query });
-}
-
-// Chat（保留但不再在 UI 直接调用）
-export function sendChat(query: string) {
-  return api.post("/chat", { query });
-}
-
-// 深度分析（保留但不再在 UI 直接调用）
-export function deepAnalysis(stock: string, section: string) {
-  return api.post("/deep-analysis", { stock, section });
+// 个股简要分析
+export function getStockBrief(code: string, name?: string) {
+  return api.get("/stock/" + encodeURIComponent(code) + "/brief", { params: name ? { name } : {} });
 }
 
 // ---------- 预测 ----------
@@ -90,10 +80,6 @@ export interface PromptListParams {
   role?: string;
   module?: string;
   search?: string;
-}
-
-export function getPromptScenes() {
-  return api.get("/admin/prompt-templates/scenes");
 }
 
 export function getPromptTemplates(params?: PromptListParams) {

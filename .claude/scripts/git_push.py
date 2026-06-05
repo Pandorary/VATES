@@ -19,8 +19,8 @@ def run(cmd: list[str]) -> bool:
 
 def main():
     if len(sys.argv) < 2:
-        print("用法: python git_push.py <commit message>")
-        print("示例: python git_push.py \"fix: 修复登录问题\"")
+        print("用法: py git_push.py <commit message>")
+        print("示例: py git_push.py \"fix: 修复登录问题\"")
         sys.exit(1)
 
     msg = sys.argv[1]

@@ -28,14 +28,12 @@ class Base(DeclarativeBase):
 async def init_db():
     """初始化数据库表 + 种子数据"""
     import app.models.stock  # noqa: F401
-    import app.models.market  # noqa: F401
+    import app.models.news  # noqa: F401
     import app.models.user  # noqa: F401
     import app.models.ai  # noqa: F401
     import app.models.chat_cache  # noqa: F401
     import app.models.holding  # noqa: F401
-    import app.models.industry_cache  # noqa: F401
     import app.models.tracking  # noqa: F401
-    import app.models.price_cache  # noqa: F401
     import app.models.user_config  # noqa: F401
     import app.models.prediction  # noqa: F401
     async with engine.begin() as conn:

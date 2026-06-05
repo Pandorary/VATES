@@ -53,6 +53,169 @@ const CONFIDENCE_BADGE: Record<string, { bg: string; text: string; label: string
   "低": { bg: "bg-red-50", text: "text-red-600", label: "数据置信度：低" },
 };
 
+// ---------- 数据快照展示 ----------
+
+function fmtNum(v: any, decimals = 2): string {
+  const n = Number(v);
+  if (isNaN(n)) return String(v ?? "-");
+  return n.toFixed(decimals);
+}
+
+function fmtVol(v: any): string {
+  const n = Number(v);
+  if (isNaN(n)) return "-";
+  if (n >= 1e8) return (n / 1e8).toFixed(2) + " 亿手";
+  if (n >= 1e4) return (n / 1e4).toFixed(2) + " 万手";
+  return n.toFixed(0);
+}
+
+function fmtAmt(v: any): string {
+  const n = Number(v);
+  if (isNaN(n)) return "-";
+  if (n >= 1e8) return (n / 1e8).toFixed(2) + " 亿元";
+  if (n >= 1e4) return (n / 1e4).toFixed(2) + " 万元";
+  return n.toFixed(2);
+}
+
+function changeCls(v: any): string {
+  const n = Number(v);
+  if (isNaN(n) || n === 0) return "text-muted-foreground";
+  return n > 0 ? "text-emerald-600" : "text-red-500";
+}
+
+function changePrefix(v: any): string {
+  const n = Number(v);
+  if (isNaN(n) || n === 0) return "";
+  return n > 0 ? "+" : "";
+}
+
+interface SnapshotProps { data: Record<string, any> | null }
+
+function DataSnapshotCard({ data }: SnapshotProps) {
+  if (!data || Object.keys(data).length === 0) return null;
+
+  const isStock = data.latest_price !== undefined || data.name !== undefined;
+  const isIndustry = data.sector_index !== undefined;
+
+  if (isStock) {
+    return (
+      <div className="bg-card rounded-lg border p-6 space-y-4">
+        <div className="flex items-center gap-2 text-sm font-medium text-foreground/80">
+          <Database className="h-4 w-4 text-primary" />
+          数据快照
+          {data.trade_date && <span className="text-xs text-muted-foreground ml-2">{data.trade_date}</span>}
+        </div>
+
+        {/* 价格区 */}
+        <div className="flex items-baseline gap-3 flex-wrap">
+          {data.latest_price != null && (
+            <span className="text-2xl font-semibold text-foreground">{fmtNum(data.latest_price)}</span>
+          )}
+          {data.price_change_percent != null && (
+            <span className={`text-lg font-medium ${changeCls(data.price_change_percent)}`}>
+              {changePrefix(data.price_change_percent)}{fmtNum(data.price_change_percent)}%
+            </span>
+          )}
+          {data.change != null && (
+            <span className={`text-sm ${changeCls(data.change)}`}>
+              {changePrefix(data.change)}{fmtNum(data.change)}
+            </span>
+          )}
+        </div>
+
+        {/* 行情网格 */}
+        <div className="grid grid-cols-3 gap-x-6 gap-y-3 text-sm">
+          {data.open_price != null && (
+            <div><span className="text-muted-foreground">开盘</span><p className="text-foreground font-medium mt-0.5">{fmtNum(data.open_price)}</p></div>
+          )}
+          {data.high_price != null && (
+            <div><span className="text-muted-foreground">最高</span><p className="text-foreground font-medium mt-0.5">{fmtNum(data.high_price)}</p></div>
+          )}
+          {data.low_price != null && (
+            <div><span className="text-muted-foreground">最低</span><p className="text-foreground font-medium mt-0.5">{fmtNum(data.low_price)}</p></div>
+          )}
+          {data.latest_close_price != null && (
+            <div><span className="text-muted-foreground">昨收</span><p className="text-foreground font-medium mt-0.5">{fmtNum(data.latest_close_price)}</p></div>
+          )}
+          {data.volume != null && (
+            <div><span className="text-muted-foreground">成交量</span><p className="text-foreground font-medium mt-0.5">{fmtVol(data.volume)}</p></div>
+          )}
+          {data.amount != null && (
+            <div><span className="text-muted-foreground">成交额</span><p className="text-foreground font-medium mt-0.5">{fmtAmt(data.amount)}</p></div>
+          )}
+        </div>
+
+        {/* 近期事件 */}
+        {data.key_events && Array.isArray(data.key_events) && data.key_events.length > 0 && (
+          <div>
+            <span className="text-xs text-muted-foreground">近期事件</span>
+            <ul className="mt-1.5 space-y-1">
+              {data.key_events.map((ev: string, i: number) => (
+                <li key={i} className="text-sm text-foreground/70 leading-relaxed">· {ev}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (isIndustry) {
+    return (
+      <div className="bg-card rounded-lg border p-6 space-y-4">
+        <div className="flex items-center gap-2 text-sm font-medium text-foreground/80">
+          <Database className="h-4 w-4 text-primary" />
+          行业数据快照
+          {data.trade_date && <span className="text-xs text-muted-foreground ml-2">{data.trade_date}</span>}
+        </div>
+
+        {/* 指数区 */}
+        <div className="flex items-baseline gap-3 flex-wrap">
+          {data.sector_index != null && (
+            <span className="text-2xl font-semibold text-foreground">{fmtNum(data.sector_index, 0)}</span>
+          )}
+          {data.sector_change_percent != null && (
+            <span className={`text-lg font-medium ${changeCls(data.sector_change_percent)}`}>
+              {changePrefix(data.sector_change_percent)}{fmtNum(data.sector_change_percent)}%
+            </span>
+          )}
+        </div>
+
+        {/* 资金流向 */}
+        {data.fund_flow && (
+          <div><span className="text-xs text-muted-foreground">资金流向</span><p className="text-foreground font-medium mt-0.5 text-sm">{data.fund_flow}</p></div>
+        )}
+
+        {/* 龙头个股 */}
+        {data.leading_stocks && Array.isArray(data.leading_stocks) && data.leading_stocks.length > 0 && (
+          <div>
+            <span className="text-xs text-muted-foreground">龙头个股</span>
+            <ul className="mt-1.5 space-y-1">
+              {data.leading_stocks.map((s: string, i: number) => (
+                <li key={i} className="text-sm text-foreground/70 leading-relaxed">· {s}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* 政策事件 */}
+        {data.policy_news && Array.isArray(data.policy_news) && data.policy_news.length > 0 && (
+          <div>
+            <span className="text-xs text-muted-foreground">政策与事件</span>
+            <ul className="mt-1.5 space-y-1">
+              {data.policy_news.map((s: string, i: number) => (
+                <li key={i} className="text-sm text-foreground/70 leading-relaxed">· {s}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return null;
+}
+
 const AIPrediction = () => {
   const { stock: stockQuery = "" } = useParams();
   const navigate = useNavigate();
@@ -236,6 +399,9 @@ const AIPrediction = () => {
                 )}
               </div>
             )}
+
+            {/* 数据快照 */}
+            <DataSnapshotCard data={dataSnapshot} />
 
             {/* 预测报告 */}
             <div className="bg-card rounded-lg border p-8">

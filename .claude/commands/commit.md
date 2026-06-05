@@ -1,5 +1,9 @@
-提交并推送代码到 git 仓库。请执行以下步骤：
+# /commit — 提交并推送代码
 
-1. 先运行 `git status` 和 `git diff --stat` 查看变更
-2. 根据变更内容自动生成合适的 commit message（遵循项目规范：chore/fix/feat 前缀，中文描述）
-3. 执行 `python .claude/scripts/git_push.py "生成的commit message"`
+按以下步骤提交并推送代码：
+
+1. 运行 `git status` 和 `git diff` 查看变更内容
+2. 根据变更自动生成 commit message，遵循项目规范：
+   - 前缀：`feat`（新功能）、`fix`（修复）、`chore`（杂项/重构/文档）
+   - 描述用中文，简洁明了
+3. 运行 `python .claude/scripts/git_push.py "<commit message>"` 一键 add + commit + push

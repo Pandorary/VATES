@@ -1,16 +1,16 @@
-"""搜索分类 + 行业分析"""
+"""搜索分类"""
 import json
+import re
 import logging
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
-from sqlalchemy import select, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
 from config import settings
+from app.database import get_db
 from app.schemas.common import ApiResponse
-from app.models.industry_cache import IndustryAnalysisCache
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -36,38 +36,6 @@ _CLASSIFY_SYSTEM_PROMPT = """你是一个A股搜索意图分类器。根据用�
 - "半导体" → {"type":"industry","name":"半导体"}
 - "天气" → {"type":"unknown","name":"天气"}"""
 
-# ---------- 行业分析 fallback prompt ----------
-_INDUSTRY_FALLBACK_PROMPT = """你是一位资深A股行业研究员。请对「{query}」行业进行全面深入的分析。
-
-请按以下板块输出，每个板块用Markdown二级标题分隔：
-
-## 行业概览
-行业定义、规模、发展阶段
-
-## 龙头企业
-列出3-5家代表性上市公司，简要说明其地位
-
-## 行业趋势
-当前发展趋势、技术变革、增长驱动力
-
-## 政策影响
-相关政策法规及其对行业的影响
-
-## 估值水平
-行业整体估值、与历史水平比较
-
-## 风险提示
-行业面临的主要风险
-
-## 投资结论
-综合研判与投资建议
-
-要求：
-- 用中文输出
-- 用 Markdown 格式
-- 内容详实，有数据支撑
-- 注明仅供参考，不构成投资建议"""
-
 
 # ---------- 搜索分类 ----------
 
@@ -75,8 +43,36 @@ class SearchRequest(BaseModel):
     query: str = Field(..., description="用户搜索关键词")
 
 
+async def _lookup_stock_code(name: str, db: AsyncSession) -> str | None:
+    """按股票名称查找代码（数据库 → 外部 API 兜底）"""
+    # 1. 先查数据库
+    for table in ("stocks", "stock_quotes"):
+        row = await db.execute(
+            text(f"SELECT code FROM {table} WHERE name=:name LIMIT 1"),
+            {"name": name},
+        )
+        r = row.fetchone()
+        if r and r[0]:
+            return r[0]
+
+    # 2. 数据库没有，通过东方财富搜索 API 查找
+    from app.services.data_engine.eastmoney import search_stock_by_name
+
+    result = await search_stock_by_name(name)
+    if result:
+        logger.info(f"外部搜索找到: {name} → {result['code']}")
+        return result["code"]
+
+    return None
+
+
+def _is_stock_code(s: str) -> bool:
+    """判断是否为 6 位数字股票代码"""
+    return bool(re.fullmatch(r"\d{6}", s))
+
+
 @router.post("/search", response_model=ApiResponse)
-async def search_classify(body: SearchRequest):
+async def search_classify(body: SearchRequest, db: AsyncSession = Depends(get_db)):
     """LLM 判断输入是个股、行业还是其他"""
     query = body.query.strip()
     if not query:
@@ -108,6 +104,22 @@ async def search_classify(body: SearchRequest):
     # 3. 解析 JSON
     content = result.get("content", "")
     classify_result = _parse_classify_json(content, query)
+
+    # 4. 个股：补全股票代码
+    if classify_result.get("type") == "stock" and not classify_result.get("code"):
+        code = None
+        # 原始输入是 6 位数字 → 直接作为代码
+        if _is_stock_code(query):
+            code = query
+        else:
+            # 按标准化名称查数据库
+            code = await _lookup_stock_code(classify_result["name"], db)
+            if not code:
+                # 按原始输入查数据库
+                code = await _lookup_stock_code(query, db)
+        if code:
+            classify_result["code"] = code
+
     _classify_cache[query] = classify_result
 
     return ApiResponse(data={**classify_result, "cached": False})
@@ -146,71 +158,3 @@ def _parse_classify_json(raw: str, fallback_name: str) -> dict:
         pass
 
     return {"type": "unknown", "name": fallback_name}
-
-
-# ---------- 行业分析 ----------
-
-class IndustryAnalysisRequest(BaseModel):
-    query: str = Field(..., description="行业板块名称")
-
-
-async def _get_industry_template(db: AsyncSession) -> str | None:
-    """获取 industry_analysis 提示词模板"""
-    row = await db.execute(
-        text("SELECT skill_detail FROM ai_prompts WHERE skill='industry_analysis' AND is_active=1 AND is_deleted=0 LIMIT 1"),
-    )
-    r = row.fetchone()
-    return r[0] if r else None
-
-
-@router.post("/industry-analysis", response_model=ApiResponse)
-async def industry_analysis(body: IndustryAnalysisRequest, db: AsyncSession = Depends(get_db)):
-    """行业分析（同天同行业缓存）"""
-    query = body.query.strip()
-    if not query:
-        return ApiResponse(code=400, message="请输入行业名称", data=None)
-
-    if not settings.LLM_API_KEY:
-        return ApiResponse(code=500, message="未配置 LLM API Key", data={"content": "请在 .env 中设置 LLM_API_KEY"})
-
-    from datetime import date
-
-    today = date.today()
-
-    # 1. 查缓存
-    stmt = select(IndustryAnalysisCache).where(
-        IndustryAnalysisCache.query == query,
-        IndustryAnalysisCache.search_date == today,
-    ).limit(1)
-    cached = (await db.execute(stmt)).scalar_one_or_none()
-    if cached:
-        return ApiResponse(data={"content": cached.response, "cached": True})
-
-    # 2. 取模板，无模板则用 fallback
-    template = await _get_industry_template(db)
-    if template:
-        system_prompt = template.replace("{{query}}", query)
-    else:
-        system_prompt = _INDUSTRY_FALLBACK_PROMPT.format(query=query)
-
-    # 3. 调 LLM
-    from app.services.llm import chat as llm_chat
-
-    try:
-        result = await llm_chat([
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"分析行业：{query}"},
-        ])
-    except Exception as e:
-        logger.error(f"行业分析失败: {e}")
-        return ApiResponse(code=500, message=f"AI 请求失败：{e}", data=None)
-
-    # 4. 写入缓存
-    content = result.get("content", "")
-    cache_entry = IndustryAnalysisCache(
-        query=query, response=content, search_date=today,
-    )
-    db.add(cache_entry)
-    await db.flush()
-
-    return ApiResponse(data={"content": content, "cached": False})
