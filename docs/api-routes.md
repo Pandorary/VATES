@@ -33,8 +33,29 @@
 
 | 方法 | 端点 | 说明 |
 |------|------|------|
-| `POST` | `/search` | 搜索分类（股票/行业识别） |
+| `POST` | `/search` | 搜索分类（股票/行业识别，个股返回 `code`） |
 | `POST` | `/industry-analysis` | 行业分析（同天同行业缓存） |
+
+### `POST /search` 响应格式
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "type": "stock",       // "stock" | "industry" | "unknown"
+    "name": "贵州茅台",      // 标准化名称
+    "code": "600519",      // type=stock 时为 6 位代码，否则为 null
+    "cached": false        // 是否命中内存缓存
+  }
+}
+```
+
+**代码查找链路**（`type=stock` 时）：
+1. LLM 分类时直接返回股票代码
+2. 若 LLM 未返回代码 → 输入为 6 位数字则直接当作代码
+3. 否则按名称查 DB（`stocks` → `stock_quotes`）
+4. DB 无结果 → 调用东方财富搜索 API 外部查找
 
 ## tracking — 预测跟踪（旧版兼容）
 
