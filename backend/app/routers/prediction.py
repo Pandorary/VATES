@@ -197,6 +197,28 @@ async def predict_industry(body: IndustryPredictionRequest, db: AsyncSession = D
     })
 
 
+# ---------- 检查预测记录是否已存在 ----------
+
+@router.get("/prediction/check", response_model=ApiResponse)
+async def check_prediction_exists(
+    type: str = Query(..., description="stock / industry"),
+    code: str = Query(default="", description="股票代码"),
+    name: str = Query(..., description="标的名称"),
+    horizon: str = Query(default="", description="预测时段"),
+    db: AsyncSession = Depends(get_db),
+):
+    """检查是否已有同标的+同时段的预测记录"""
+    row = await db.execute(
+        text("""SELECT 1 FROM prediction_records
+                WHERE user_id=:uid AND is_deleted=0
+                  AND type=:type AND name=:name AND horizon=:horizon
+                LIMIT 1"""),
+        {"uid": DEFAULT_USER_ID, "type": type, "name": name, "horizon": horizon},
+    )
+    exists = row.fetchone() is not None
+    return ApiResponse(data={"exists": exists})
+
+
 # ---------- 保存预测记录并开启跟踪 ----------
 
 class SavePredictionBody(BaseModel):

@@ -18,6 +18,9 @@ async def lifespan(app: FastAPI):
     # 初始化行情管理器
     from app.services.data_engine import init_quote_manager
     await init_quote_manager()
+    # 初始化行业板块管理器
+    from app.services.data_engine import init_sector_manager
+    await init_sector_manager()
     # 启动定时采集
     from app.services.data_engine.scheduler import start_scheduler, stop_scheduler
     await start_scheduler()

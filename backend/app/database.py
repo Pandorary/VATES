@@ -36,6 +36,7 @@ async def init_db():
     import app.models.tracking  # noqa: F401
     import app.models.user_config  # noqa: F401
     import app.models.prediction  # noqa: F401
+    import app.models.sector  # noqa: F401
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 

@@ -25,6 +25,10 @@ export function predictIndustry(name: string) {
   return api.post("/prediction/industry", { name });
 }
 
+export function checkPredictionExists(type: string, code: string, name: string, horizon: string) {
+  return api.get("/prediction/check", { params: { type, code, name, horizon } });
+}
+
 export function savePrediction(data: {
   type: string;
   code: string;

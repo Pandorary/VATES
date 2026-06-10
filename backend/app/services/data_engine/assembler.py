@@ -1,9 +1,9 @@
-"""智能数据引擎 — 基于 data_engine 系统的数据提取 + LLM 行业数据获取
+"""智能数据引擎 — 基于 data_engine 系统的数据提取
 
 行情数据统一通过 app.services.data_engine 包获取（多源故障转移 + TTL 缓存 + 定时采集）。
 本模块负责：
 - 将 QuoteData 转换为预测系统所需的结构化格式
-- 行业数据获取（LLM + 交叉验证）
+- 行业数据获取（三层数据源：东财 API → Playwright 爬虫 → LLM 兜底）
 - AI 模板查询
 """
 import json
@@ -14,33 +14,7 @@ from datetime import datetime
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.llm import chat as llm_chat
-
 logger = logging.getLogger(__name__)
-
-
-# ---------- 行业数据提示词 ----------
-
-DATA_EXTRACTION_PROMPT_INDUSTRY = """你是一个严格的数据提取器。你的唯一任务是从提供的原始文本中提取结构化数据。
-
-严禁进行任何预测、分析或推断。只提取明确出现在文本中的数据。
-
-请提取以下字段并以 JSON 格式输出：
-
-{{
-  "sector_index": "行业指数最新点位（数字）",
-  "sector_change_percent": "行业指数涨跌幅%（数字）",
-  "leading_stocks": ["龙头个股名称及近期表现摘要，最多3条"],
-  "policy_news": ["近期行业政策与重大事件，最多5条"],
-  "fund_flow": "板块资金流向概况（净流入/净流出及金额）",
-  "trade_date": "数据对应的交易日期（YYYY-MM-DD）"
-}}
-
-如果某个字段在原始文本中找不到，填 null。不要编造数据。
-
-原始数据如下：
-{raw_data}
-"""
 
 
 # ---------- 个股数据获取（基于 data_engine 系统）----------
@@ -141,110 +115,87 @@ async def _get_stock_events(code: str, db: AsyncSession) -> list[str]:
 
 # ---------- 行业数据获取 ----------
 
+# 置信度映射：数据源 → 默认置信度
+_SECTOR_CONFIDENCE = {"sina": "高", "eastmoney": "高", "playwright": "中", "llm": "低"}
+
+
+def _assess_llm_confidence(sector) -> str:
+    """评估 LLM 数据完整性，数据足够时提升到 '中'"""
+    complete_count = sum(1 for v in [
+        sector.sector_index,
+        sector.sector_change_percent,
+        sector.leading_stocks,
+        sector.fund_flow,
+    ] if v not in (None, "", []))
+    return "中" if complete_count >= 3 else "低"
+
+
 async def fetch_industry_data(name: str, db: AsyncSession) -> dict:
-    """多源抓取行业数据"""
-    results = []
+    """三层数据源获取行业数据：东财 API → Playwright 爬虫 → LLM 兜底
 
-    raw_texts = await _fetch_industry_raw(name)
-    template = await _get_extraction_template(db, "industry")
+    行情数据来自 sector 数据引擎（多源故障转移 + TTL 缓存 + DB 回退）。
+    """
+    from app.services.data_engine.sector_manager import get_sector
 
-    for source_name, raw_text in raw_texts:
-        if not raw_text:
-            continue
-        try:
-            prompt = template or DATA_EXTRACTION_PROMPT_INDUSTRY
-            prompt = prompt.replace("{raw_data}", raw_text[:4000])
-            result = await llm_chat(
-                [{"role": "system", "content": prompt}, {"role": "user", "content": f"提取行业 {name} 的数据"}],
-                temperature=0.0, max_tokens=1000,
-            )
-            structured = _parse_json_from_llm(result.get("content", ""))
-            if structured:
-                structured["_source"] = source_name
-                results.append(structured)
-        except Exception as e:
-            logger.warning(f"行业数据提取失败 [{source_name}]: {e}")
+    # 1. 三层数据源获取行情
+    sector = await get_sector(name, db)
 
-    if not results:
-        fallback = await _llm_fallback_industry(name)
+    if not sector:
         return {
-            "structured_data": fallback,
+            "structured_data": {},
             "confidence_label": "低",
             "source_urls": [],
             "fetch_timestamp": datetime.now().isoformat(),
         }
 
-    validated, confidence = cross_validate_industry(results)
+    # 2. 置信度评估（LLM 源检查数据完整性）
+    if sector.source == "llm":
+        confidence = _assess_llm_confidence(sector)
+    else:
+        confidence = _SECTOR_CONFIDENCE.get(sector.source, "低")
+
+    # 3. 没有政策新闻时，从 news 表补充（所有数据源都需要）
+    if not sector.policy_news:
+        sector.policy_news = await _get_sector_news(sector.name, db)
+
+    # 4. 组装返回
+    structured = {
+        "name": sector.name or name,
+        "code": sector.code,
+        "sector_index": sector.sector_index,
+        "sector_change_percent": sector.sector_change_percent,
+        "leading_stocks": sector.leading_stocks,
+        "policy_news": sector.policy_news,
+        "fund_flow": sector.fund_flow,
+        "trade_date": datetime.now().strftime("%Y-%m-%d"),
+    }
+
     return {
-        "structured_data": validated,
+        "structured_data": {k: v for k, v in structured.items() if v not in (None, "", [])},
         "confidence_label": confidence,
-        "source_urls": [],
+        "source_urls": [f"{sector.code}:{sector.source}"],
         "fetch_timestamp": datetime.now().isoformat(),
     }
 
 
-async def _fetch_industry_raw(name: str) -> list[tuple[str, str]]:
-    """获取行业原始数据（MVP 使用 LLM）"""
+async def _get_sector_news(sector_name: str, db: AsyncSession) -> list[str]:
+    """从 news 表获取相关行业新闻标题"""
     try:
-        result = await llm_chat(
-            [
-                {"role": "system", "content": f"请提供A股「{name}」行业的最新数据，包括：行业指数点位及涨跌幅、龙头个股近期表现（3只）、近期行业政策事件（3条）、板块资金流向。用中文输出。"},
-                {"role": "user", "content": f"查询行业 {name} 数据"},
-            ],
-            temperature=0.0, max_tokens=800,
+        rows = await db.execute(
+            text("""
+                SELECT title FROM news
+                WHERE title LIKE :kw OR content_preview LIKE :kw
+                ORDER BY publish_time DESC LIMIT 5
+            """),
+            {"kw": f"%{sector_name}%"},
         )
-        return [("LLM行业数据", result.get("content", ""))]
+        return [r[0] for r in rows.fetchall() if r[0]]
     except Exception as e:
-        logger.warning(f"行业数据获取失败: {e}")
+        logger.debug(f"行业新闻查询失败 [{sector_name}]: {e}")
         return []
 
 
-async def _llm_fallback_industry(name: str) -> dict:
-    """LLM 兜底获取行业数据"""
-    try:
-        result = await llm_chat(
-            [
-                {"role": "system", "content": f"提供行业 {name} 数据，JSON格式：{{\"sector_index\":数字,\"sector_change_percent\":数字,\"leading_stocks\":[],\"policy_news\":[],\"fund_flow\":\"\"}}"},
-                {"role": "user", "content": f"查询 {name}"},
-            ],
-            temperature=0.0, max_tokens=300,
-        )
-        return _parse_json_from_llm(result.get("content", "")) or {}
-    except Exception:
-        return {}
-
-
-# ---------- 交叉验证 ----------
-
-def cross_validate_industry(results: list[dict]) -> tuple[dict, str]:
-    """交叉验证行业数据"""
-    if len(results) == 0:
-        return {}, "低"
-
-    best = max(results, key=lambda r: sum(1 for v in r.values() if v is not None and not str(v).startswith("_")))
-    validated = {k: v for k, v in best.items() if not k.startswith("_")}
-
-    null_count = sum(1 for v in validated.values() if v is None)
-    if len(results) >= 2 and null_count <= 1:
-        confidence = "高"
-    elif null_count <= 2:
-        confidence = "中"
-    else:
-        confidence = "低"
-
-    return validated, confidence
-
-
 # ---------- 辅助函数 ----------
-
-async def _get_extraction_template(db: AsyncSession, data_type: str) -> str | None:
-    """获取数据提取提示词模板"""
-    row = await db.execute(
-        text("SELECT skill_detail FROM ai_prompts WHERE scene='data_extraction' AND is_active=1 AND is_deleted=0 LIMIT 1"),
-    )
-    r = row.fetchone()
-    return r[0] if r else None
-
 
 def _parse_json_from_llm(raw: str) -> dict | None:
     """从 LLM 响应中解析 JSON"""

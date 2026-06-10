@@ -319,7 +319,7 @@ const AIPrediction = () => {
 
   return (
     <div className="min-h-[calc(100vh-56px)] p-8">
-      <div className="max-w-[820px] mx-auto">
+      <div className="w-full max-w-[50%] mx-auto">
         <div className="flex items-center justify-between mb-8">
           <div>
             <h2 className="text-2xl font-semibold text-foreground tracking-tight flex items-center gap-2">

@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { predictStock, predictIndustry } from "@/services/api";
 import { Loader2 } from "lucide-react";
 import { RESULT_CACHE_KEY, type PredResult } from "./search/shared";
@@ -12,6 +12,7 @@ const SearchPredicting = () => {
 
   const navigate = useNavigate();
   const calledRef = useRef(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (!type || !name) {
@@ -36,7 +37,7 @@ const SearchPredicting = () => {
         const data = res.data.data;
 
         if (res.data.code !== 200 && res.data.code !== 0) {
-          navigate(`/classify?q=${encodeURIComponent(name)}&type=${type}&name=${encodeURIComponent(name)}`, { replace: true });
+          setError(res.data.message || "AI 预测失败，请稍后重试");
           return;
         }
 
@@ -55,7 +56,7 @@ const SearchPredicting = () => {
           { state: result, replace: true },
         );
       } catch {
-        navigate("/", { replace: true });
+        setError("请求失败，请确认后端服务已启动");
       }
     })();
   }, [type, name, horizon, navigate]);
@@ -63,10 +64,17 @@ const SearchPredicting = () => {
   return (
     <div className="flex flex-col items-center justify-center gap-5 pt-28 pb-20 px-4">
       <h1 className="text-[32px] font-medium text-black">VATES</h1>
-      <div className="flex items-center gap-3 mt-10">
-        <Loader2 className="h-5 w-5 animate-spin text-primary" />
-        <span className="text-sm text-gray-400">数据引擎获取中，AI 推演中...</span>
-      </div>
+      {error ? (
+        <div className="flex flex-col items-center gap-4 mt-10">
+          <p className="text-sm text-gray-500">{error}</p>
+          <Link to="/" className="text-sm text-primary hover:underline">返回首页重新搜索</Link>
+        </div>
+      ) : (
+        <div className="flex items-center gap-3 mt-10">
+          <Loader2 className="h-5 w-5 animate-spin text-primary" />
+          <span className="text-sm text-gray-400">数据引擎获取中，AI 推演中...</span>
+        </div>
+      )}
     </div>
   );
 };

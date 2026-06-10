@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { getPredictionRecords, getPredictionDetail, deletePrediction, triggerReview } from "@/services/api";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,6 +13,7 @@ import {
   Database,
   FileText,
   Trash2,
+  TrendingUp,
 } from "lucide-react";
 import { marked } from "marked";
 import { toast } from "sonner";
@@ -91,6 +93,7 @@ const PredictionTrack = () => {
   const [detail, setDetail] = useState<PredictionDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [reviewing, setReviewing] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   // 按股票代码分组（同只股票不同时段合并为一条）
   const grouped = useMemo(() => {
@@ -192,7 +195,7 @@ const PredictionTrack = () => {
 
   return (
     <div className="min-h-[calc(100vh-56px)] p-8">
-      <div className="max-w-[860px] mx-auto">
+      <div className="w-full max-w-[50%] mx-auto">
         <div className="flex items-center justify-between mb-8">
           <div>
             <h2 className="text-2xl font-semibold text-foreground tracking-tight">预测记录</h2>
@@ -267,6 +270,15 @@ const PredictionTrack = () => {
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-xs rounded-lg"
+                        onClick={() => navigate(`/prediction/${encodeURIComponent(group.code || group.name)}`)}
+                      >
+                        <TrendingUp className="h-3.5 w-3.5 mr-1" />
+                        预测
+                      </Button>
                       <Button variant="ghost" size="sm" onClick={() => toggleGroupExpand(group.key)}>
                         {isGroupExpanded ? <ChevronUp className="h-4 w-4 mr-1" /> : <ChevronDown className="h-4 w-4 mr-1" />}
                         {isGroupExpanded ? "收起" : `展开 (${group.items.length})`}

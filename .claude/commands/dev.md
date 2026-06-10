@@ -6,11 +6,10 @@
 
 ## 后端
 
-```bash
-# 从仓库根目录启动 (localhost:8001)
-cd D:/AI/vates
-export PYTHONPATH="D:/AI/vates;D:/AI/vates/backend"
-py -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8001 --reload
+```powershell
+cd D:\AI\vates
+$env:PYTHONPATH = "D:\AI\vates;D:\AI\vates\backend"
+python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8001 --reload
 ```
 
 ## 前端

@@ -1,0 +1,112 @@
+╭─── Claude Code 2.1.91 ───────────────────────────────────────────────╮
+│ Session exported: 2026-06-11 00:15:25                                                  │
+╰──────────────────────────────────────────────────────────────────────────╯
+
+> 预测跟踪页面，行业预测为什么不能出发复盘？
+
+  (thinking... a63ce165-cb9... ctrl+o to expand)
+
+● Let我先查看预测跟踪页面和相关代码，了解行业预测的实现情况。
+
+● Read(D:\AI\vates\frontend\src\pages\PredictionTrack.tsx)
+
+● Grep(复盘|review|reanalyze)
+  ⎿  Done (Read(D:\AI\vates\frontend\src\pages\PredictionTrack.tsx))
+  ⎿  Done (Grep(复盘|review|reanalyze))
+  (thinking... c56f6701-bbf... ctrl+o to expand)
+
+● 前端页面看起来对个股和行业预测都显示了「触发复盘」按钮。让我查看后端 API 是否有对行业预测的复盘限制。
+
+● Grep(triggerReview|review.*prediction|prediction.*review)
+  ⎿  Done (Grep(triggerReview|review.*prediction|prediction.*review))
+  (thinking... 44d756fd-9a6... ctrl+o to expand)
+
+● Read(D:\AI\vates\backend\app\routers\prediction.py)
+  ⎿  Done (Read(D:\AI\vates\backend\app\routers\prediction.py))
+  (thinking... 5760f967-bed... ctrl+o to expand)
+
+● Grep(get_active_template|fetch_industry_data)
+  ⎿  Done (Grep(get_active_template|fetch_industry_data))
+  (thinking... d76eb118-817... ctrl+o to expand)
+
+● Read(D:\AI\vates\backend\app\services\data_engine\assembler.py)
+
+● Read(D:\AI\vates\backend\app\services\data_engine\assembler.py)
+  ⎿  Done (Read(D:\AI\vates\backend\app\services\data_engine\assembler.py))
+  ⎿  Done (Read(D:\AI\vates\backend\app\services\data_engine\assembler.py))
+  (thinking... de972d87-79a... ctrl+o to expand)
+
+● 现在需要检查数据库中是否有激活的 `industry_review` 模板。
+
+● Bash(Check industry_review templates in database)
+  ⎿  Done (Bash(Check industry_review templates in database))
+     Exit code 127
+/usr/bin/bash: line 1: sqlite3: command not found
+  (thinking... 132a6929-319... ctrl+o to expand)
+
+● Bash(Check ai_prompts table for industry/review templates via Python)
+  ⎿  Done (Bash(Check ai_prompts table for industry/review templates via Python))
+     ('industry_analysis', 1, '��ҵ�о�Ա', '��ҵ����')
+('stock_review_tomorrow', 1, 'A�ɷ���ʦ-���߸���', '���ɸ���-��һ������')
+('stock_review_week', 1, 'A�ɷ���ʦ-���θ���', '���ɸ���-һ��')
+('stock_review_1m', 1,
+  (thinking... f7d28520-073... ctrl+o to expand)
+
+● 模板存在且激活。让我检查模板内容和是否包含必要的占位符。
+
+● Bash(Check industry_review template content)
+  ⎿  Done (Bash(Check industry_review template content))
+     Scene: industry_review
+Template (first 500 chars): ����һλ�Ͻ���A����ҵ�����о�Ա�������������Ϣ��֮ǰ����ҵ���н��и��̣�
+
+��ԭʼԤ�⡿
+{{prediction}}
+
+����ǰ�������ݡ�
+{{current_data}}
+
+�밴���¿��������̱��棺
+1.
+  (thinking... 3488ddff-71f... ctrl+o to expand)
+
+● 模板正常。让我进一步检查 `sector_manager` 中的 `get_sector` 函数，看是否是数据获取环节出问题。
+
+● Read(D:\AI\vates\backend\app\services\data_engine\sector_manager.py)
+  ⎿  Done (Read(D:\AI\vates\backend\app\services\data_engine\sector_manager.py))
+  (thinking... 848fcddf-857... ctrl+o to expand)
+
+● 让我查看数据库中是否有行业预测记录以及它的状态。
+
+● Bash(Check industry prediction records in database)
+  ⎿  Done (Bash(Check industry prediction records in database))
+     === ��ҵԤ���¼ ===
+('168c08c1-494f-4df2-a54d-c74c3985b454', 'industry', '﮵��', 'short_long', 'tracking', '2026-06-10 23:49:20')
+  (thinking... 45a02b4c-315... ctrl+o to expand)
+
+● 让我尝试调用复盘 API 看看实际报什么错。
+
+● Bash(Test trigger review API for industry prediction)
+  ⎿  Done (Bash(Test trigger review API for industry prediction))
+  (thinking... 54d35976-bb4... ctrl+o to expand)
+
+● 经过排查，**行业预测的复盘功能目前是正常工作的**。我刚才用数据库中那条「锂电池」行业预测记录直接调了 API，成功生成复盘报告。
+  
+  ## 复盘流程分析
+  
+  整个行业预测复盘的链路是完整的：
+  
+  **前端** (`PredictionTrack.tsx:316-320`)：个股和行业预测共用同一套「触发复盘」按钮，没有区分类型。
+  
+  **后端** (`prediction.py:391-460`)：
+  1. 根据 `pred_type` 判断场景 — `stock` 走个股复盘模板，其他（包括 `industry`）走 `industry_review` 模板
+  2. 调用 `fetch_industry_data` → `get_sector`（东财→新浪→Playwright→LLM 四层故障转移）获取最新行业数据
+  3. 将原始预测 + 当前数据填入模板，调 LLM 生成复盘
+  
+  **数据库**：`industry_review` 模板已存在且激活，占位符 `{{prediction}}` 和 `{{current_data}}` 齐全。
+  
+  ## 如果之前遇到过失败
+  
+  最可能的原因是模板当时未配置。后端在找不到模板时会返回 `400` + `"当前AI模板未配置，请联系管理员"`。你现在可以再试试，应该能正常触发了。
+  (thinking... cd1974ce-7b4... ctrl+o to expand)
+
+● Bash(Save conversation transcript automatically)
